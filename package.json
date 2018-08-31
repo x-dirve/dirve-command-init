@@ -1,6 +1,6 @@
 {
   "name": "dirve-command-init",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "dirve project scaffold",
   "main": "index.js",
   "scripts": {
@@ -16,9 +16,12 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "yeoman-generator": "2.0.5",
     "colors": "0.6.2",
     "debug": "1.0.2",
-    "dirve-generator": "0.1.0"
+    "ejs": "^2.6.1",
+    "handlebars": "^4.0.11",
+    "inquirer": "^6.2.0",
+    "metalsmith": "^2.3.0",
+    "rimraf": "^2.6.2"
   }
 }

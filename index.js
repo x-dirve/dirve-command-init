@@ -2,8 +2,13 @@
 
 var debug = require('debug')('dirve:init'),
     colors = require('colors'),
-    yeoman = require('yeoman-generator'),
     path = require('path'),
+    fs = require('fs'),
+    inquirer = require('inquirer'),
+    Metalsmith = require('metalsmith'),
+    rm = require('rimraf'),
+    spawn = require('child_process').spawn,
+    ejs = require('ejs'),
     localPath = path.join(__dirname, 'node_modules');
 
 // prepend ./node_modules to NODE_PATH
@@ -22,32 +27,134 @@ exports.usage = '[options]'
 exports.desc = 'init dirve project';
 exports.register = function (commander) {
     commander
-        .option('--skip-install', 'skip installation')
+        .option('-d --dest [dest]', 'destination')
         .action(function () {
-            var env = yeoman(),
-                args = Array.prototype.slice.call(arguments),
+            var args = Array.prototype.slice.call(arguments),
                 options = args.pop(),
                 opts = {
                     clean: true,
-                    skipInstall: !!options.skipInstall
-                };
-
-            env.lookup();
-
-            env.on('error', function (err) {
-                if (~err.message.indexOf('You don\'t seem to have a generator with the name')) {
-                    err.message = err.message.split('\n')[0];
+                    dest: options.dest
                 }
-
-                log('error', err.message, 'red');
-                debug(err.stack);
-                process.exit(err.code || 1);
-            });
-
-            env.on('end', function () {
-                log('init', 'finished');
-            });
-
-            env.run('dirve', opts);
+            inquirer.prompt([
+                {
+                    type: 'input',
+                    name: 'name',
+                    default: 'dirve'
+                },
+                {
+                    type: 'input',
+                    name: 'version',
+                    default: '1.0.0'
+                },
+                {
+                    type: 'input',
+                    name: 'description',
+                    default: 'dirve scaffold'
+                },
+                {
+                    type: 'input',
+                    name: 'platform',
+                    default: 'mobile'
+                },
+                {
+                    type: 'confirm',
+                    name: 'init',
+                    message: 'init project?',
+                    default: true
+                }
+            ]).then(meta => {
+                var dest = path.join(process.cwd(), opts.dest || meta.name)
+                var doIt = function() {
+                    downloadTemplate('git@git.wxpai.cn:pi-plusplus/pi-scaffold.git', dest).then((src) => {
+                        generate(src, dest, meta).then(() => {
+                            if (meta.init) {
+                                var npm = spawn('./init', {
+                                    cwd: dest,
+                                    stdio: 'inherit'
+                                })
+                                npm.on('close', (code) => {
+                                    log('log', 'done!')
+                                })
+                            } else {
+                                log('log', 'done!')
+                            }
+                        })
+                    }).catch(err => {
+                        log('error', err)
+                    })
+                }
+                try {
+                    fs.accessSync(dest, fs.constants.R_OK | fs.constants.W_OK)
+                    inquirer.prompt([
+                        {
+                            type: 'confirm',
+                            name: 'overwrite',
+                            message: `overwrite exists project?`
+                        }
+                    ]).then(re => {
+                        if (re.overwrite) {
+                            rm(dest, doIt)
+                        }
+                    })
+                } catch (err) {
+                    doIt()
+                }
+                
+            }).catch(err => {
+                log('error', err)
+            })
         });
 };
+
+function template(files, metalsmith, done) {
+    var metadata = metalsmith.metadata();
+    Object.keys(files).forEach(file => {
+        var ext = path.extname(file)
+        if ([
+            '.json',
+            '.js',
+            '.md',
+            '.html',
+            '.ejs'
+        ].indexOf(ext) === -1) return
+        var str = files[file].contents.toString()
+        files[file].contents = ejs.render(str, metadata, {
+            delimiter: '$'
+        })
+    })
+    done()
+}
+
+function generate(src, dest, meta) {
+    return new Promise((resolve, reject) => {
+        Metalsmith(__dirname)
+            .source(src)
+            .ignore('.git')
+            .metadata(JSON.parse(JSON.stringify(meta)))
+            .destination(dest)
+            .use(template)
+            .build(function(err) {
+                if (err) {
+                    reject(err)
+                } else {
+                    resolve()
+                }
+                rm(src, function() {})
+            })
+    }).catch(err => {
+        log('error', err)
+    })
+}
+
+function downloadTemplate(url, name) {
+    var dest = path.join(name, '.template')
+    return new Promise((resolve, reject) => {
+        var git = spawn('git', ['clone', url, dest], {
+            cwd: process.cwd(),
+            stdio: 'inherit'
+        })
+        git.on('close', (code) => {
+            resolve(dest)
+        })
+    })
+}
